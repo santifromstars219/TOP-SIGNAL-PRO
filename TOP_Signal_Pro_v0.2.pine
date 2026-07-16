@@ -1,0 +1,225 @@
+//@version=6
+indicator("TOP Signal Pro v0.2", overlay=true, max_labels_count=500)
+
+//══════════════════════════════════════════════
+// CONFIGURACIÓN
+//══════════════════════════════════════════════
+
+groupGeneral = "Configuración"
+
+showPanel = input.bool(true, "Mostrar Panel", group=groupGeneral)
+showSignals = input.bool(true, "Mostrar Señales", group=groupGeneral)
+minimumScore = input.int(90, "Score mínimo", minval=50, maxval=100, group=groupGeneral)
+int score = 0
+//══════════════════════════════════════════════
+// EMA ENGINE
+//══════════════════════════════════════════════
+
+ema3 = ta.ema(close,3)
+ema9 = ta.ema(close,9)
+ema20 = ta.ema(close,20)
+ema50 = ta.ema(close,50)
+ema200 = ta.ema(close,200)
+
+// No dibujarlas
+plot(ema3, display=display.none)
+plot(ema9, display=display.none)
+plot(ema20, display=display.none)
+plot(ema50, display=display.none)
+plot(ema200, display=display.none)
+
+//══════════════════════════════════════════════
+//══════════════════════════════════════════════
+// TREND ENGINE v2
+//══════════════════════════════════════════════
+
+
+//══════════════════════════════════════════════
+// TREND MODULE
+//══════════════════════════════════════════════
+
+// Funciones de tendencia
+isBullTrend() =>
+    ema3 > ema9
+
+isBearTrend() =>
+    ema3 < ema9
+
+// Tendencia actual
+bool bullTrend = isBullTrend()
+bool bearTrend = isBearTrend()
+
+// Pendiente de las EMAs
+ema20Slope = ema20 - ema20[5]
+ema50Slope = ema50 - ema50[5]
+
+// Precio respecto a la tendencia
+priceAboveTrend = close > ema20 and close > ema50
+priceBelowTrend = close < ema20 and close < ema50
+
+// Distancia entre EMAs (expansión)
+emaDistance = math.abs(ema3 - ema9) + math.abs(ema9 - ema20) + math.abs(ema20 - ema50)
+emaExpansion = emaDistance > ta.sma(emaDistance,20)
+
+//══════════════════════════════════════════════
+// TREND SCORE ENGINE
+//══════════════════════════════════════════════
+
+int trendScore = 0
+
+// Tendencia principal
+if bullTrend
+    trendScore += 30
+
+if bearTrend
+    trendScore += 30
+
+// Precio respecto a EMA20
+if close > ema20
+    trendScore += 15
+
+if close < ema20
+    trendScore += 15
+
+// EMA20 con pendiente
+if ema20 > ema20[5]
+    trendScore += 15
+
+if ema20 < ema20[5]
+    trendScore += 15
+
+
+
+
+//══════════════════════════════════════════════
+// LIQUIDITY ENGINE v1
+//══════════════════════════════════════════════
+
+liquidityLookback = input.int(10, "Liquidity Lookback", group="Liquidity")
+
+//══════════════════════════════════════
+// SWING POINTS (Estructura)
+//══════════════════════════════════════
+
+pivotLength = input.int(3, "Pivot Length", minval=2, maxval=10, group="Liquidity")
+
+pivotLow = ta.pivotlow(low, pivotLength, pivotLength)
+pivotHigh = ta.pivothigh(high, pivotLength, pivotLength)
+
+// Guardamos el último swing válido
+var float lastPivotLow = na
+var float lastPivotHigh = na
+
+if not na(pivotLow)
+    lastPivotLow := pivotLow
+
+if not na(pivotHigh)
+    lastPivotHigh := pivotHigh
+
+//══════════════════════════════════════
+// LIQUIDITY SWEEP
+//══════════════════════════════════════
+
+bullSweep =
+     not na(lastPivotLow) and
+     low < lastPivotLow and
+     close > lastPivotLow
+
+bearSweep =
+     not na(lastPivotHigh) and
+     high > lastPivotHigh and
+     close < lastPivotHigh
+
+// Fortaleza de la vela
+bullBody =
+     close > open and
+     close > (low + (high-low)*0.5)
+
+bearBody =
+     close < open and
+     close < (high - (high-low)*0.5)
+
+    
+//══════════════════════════════════════
+// LIQUIDITY SCORE
+//══════════════════════════════════════
+
+int liquidityScore = 0
+
+if bullSweep or bearSweep
+    liquidityScore += 40
+
+if bullBody or bearBody
+    liquidityScore += 20
+
+// Confirmación de continuación
+bullConfirm =
+     bullSweep[1] and
+     close > high[1]
+
+bearConfirm =
+     bearSweep[1] and
+     close < low[1]
+
+if bullConfirm or bearConfirm
+    liquidityScore += 40
+
+    
+//══════════════════════════════════════════════
+// BOS ENGINE
+//══════════════════════════════════════════════
+bullBOS = not na(lastPivotHigh) and close > lastPivotHigh
+bearBOS = not na(lastPivotLow) and close < lastPivotLow
+int bosScore = 0
+if bullBOS or bearBOS
+    bosScore += 100
+
+//══════════════════════════════════════════════
+// FINAL SCORE ENGINE
+//══════════════════════════════════════════════
+
+score := trendScore + liquidityScore + bosScore
+score := math.min(score, 100)
+
+    //══════════════════════════════════════════════
+// FINAL SCORE ENGINE
+//══════════════════════════════════════════════
+
+// Construcción del score total
+score := trendScore + liquidityScore + bosScore
+
+// Limitar el score máximo
+score := math.min(score, 100)
+
+//══════════════════════════════════════════════
+// PANEL
+//══════════════════════════════════════════════
+
+var table panel = table.new(position.top_right,2,7)
+
+if barstate.islast and showPanel
+
+    table.cell(panel,0,0,"TOP SIGNAL",text_color=color.white,bgcolor=color.rgb(25,25,35))
+    table.cell(panel,1,0,"v0.1",text_color=color.yellow,bgcolor=color.rgb(25,25,35))
+
+    table.cell(panel,0,1,"Score")
+    table.cell(panel,1,1,str.tostring(score))
+
+    table.cell(panel,0,2,"Trend")
+
+    table.cell(panel,1,2,
+         bullTrend ? "Bullish" :
+         bearTrend ? "Bearish" :
+         "Neutral")
+
+    table.cell(panel,0,3,"Activo")
+    table.cell(panel,1,3,syminfo.ticker)
+
+    table.cell(panel,0,4,"TF")
+    table.cell(panel,1,4,timeframe.period)
+
+    table.cell(panel,0,5,"Trend Score")
+    table.cell(panel,1,5,str.tostring(trendScore))
+
+    table.cell(panel,0,6,"Liquidity")
+    table.cell(panel,1,6,str.tostring(liquidityScore))
