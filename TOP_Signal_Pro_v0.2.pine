@@ -1,5 +1,6 @@
+
 //@version=6
-indicator("TOP Signal Pro v0.2", overlay=true, max_labels_count=500)
+indicator("TOP Signal Pro v0.1", overlay=true, max_labels_count=500)
 
 //══════════════════════════════════════════════
 // CONFIGURACIÓN
@@ -10,6 +11,18 @@ groupGeneral = "Configuración"
 showPanel = input.bool(true, "Mostrar Panel", group=groupGeneral)
 showSignals = input.bool(true, "Mostrar Señales", group=groupGeneral)
 minimumScore = input.int(90, "Score mínimo", minval=50, maxval=100, group=groupGeneral)
+
+//══════════════════════════════════════════════
+// SCORE ENGINE v2
+//══════════════════════════════════════════════
+
+int buyScore = 0
+int sellScore = 0
+
+int trendScore = 0
+int liquidityScore = 0
+int structureScore = 0
+
 int score = 0
 //══════════════════════════════════════════════
 // EMA ENGINE
@@ -64,8 +77,6 @@ emaExpansion = emaDistance > ta.sma(emaDistance,20)
 //══════════════════════════════════════════════
 // TREND SCORE ENGINE
 //══════════════════════════════════════════════
-
-int trendScore = 0
 
 // Tendencia principal
 if bullTrend
@@ -144,8 +155,6 @@ bearBody =
 // LIQUIDITY SCORE
 //══════════════════════════════════════
 
-int liquidityScore = 0
-
 if bullSweep or bearSweep
     liquidityScore += 40
 
@@ -164,32 +173,32 @@ bearConfirm =
 if bullConfirm or bearConfirm
     liquidityScore += 40
 
-    
 //══════════════════════════════════════════════
-// BOS ENGINE
+// STRUCTURE ENGINE v1
 //══════════════════════════════════════════════
-bullBOS = not na(lastPivotHigh) and close > lastPivotHigh
-bearBOS = not na(lastPivotLow) and close < lastPivotLow
-int bosScore = 0
-if bullBOS or bearBOS
-    bosScore += 100
+
+// Break Of Structure
+
+bullBOS =
+    not na(lastPivotHigh) and
+    close > lastPivotHigh
+
+bearBOS =
+    not na(lastPivotLow) and
+    close < lastPivotLow
+
+if bullBOS
+    structureScore += 50
+
+if bearBOS
+    structureScore += 50
 
 //══════════════════════════════════════════════
 // FINAL SCORE ENGINE
 //══════════════════════════════════════════════
 
-score := trendScore + liquidityScore + bosScore
-score := math.min(score, 100)
-
-    //══════════════════════════════════════════════
-// FINAL SCORE ENGINE
-//══════════════════════════════════════════════
-
-// Construcción del score total
-score := trendScore + liquidityScore + bosScore
-
-// Limitar el score máximo
-score := math.min(score, 100)
+score := trendScore + liquidityScore + structureScore
+score := math.min(score,100)
 
 //══════════════════════════════════════════════
 // PANEL
