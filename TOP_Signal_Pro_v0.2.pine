@@ -1,6 +1,5 @@
-
 //@version=6
-indicator("TOP Signal Pro v0.1", overlay=true, max_labels_count=500)
+indicator("TOP Signal Pro v2.2", overlay=true, max_labels_count=500)
 
 //══════════════════════════════════════════════
 // CONFIGURACIÓN
@@ -22,8 +21,29 @@ int sellScore = 0
 int trendScore = 0
 int liquidityScore = 0
 int structureScore = 0
+int bosStrength = 0
+int chochScore = 0
+int fvgScore = 0
+float fvgSize = 0.0
+int fvgQuality = 0
+bool premiumBullFVG = false
+bool premiumBearFVG = false
+bool institutionalBullSetup = false
+bool institutionalBearSetup = false
+bool respectedBullFVG = false
+bool respectedBearFVG = false
+
+//══════════════════════════════════════
+// MASTER FILTER ENGINE
+//══════════════════════════════════════
+
+bool trendOK = false
+bool liquidityOK = false
+bool structureOK = false
+bool fvgOK = false
 
 int score = 0
+
 //══════════════════════════════════════════════
 // EMA ENGINE
 //══════════════════════════════════════════════
@@ -42,10 +62,8 @@ plot(ema50, display=display.none)
 plot(ema200, display=display.none)
 
 //══════════════════════════════════════════════
-//══════════════════════════════════════════════
 // TREND ENGINE v2
 //══════════════════════════════════════════════
-
 
 //══════════════════════════════════════════════
 // TREND MODULE
@@ -99,8 +117,7 @@ if ema20 > ema20[5]
 if ema20 < ema20[5]
     trendScore += 15
 
-
-
+trendOK := trendScore >= 45
 
 //══════════════════════════════════════════════
 // LIQUIDITY ENGINE v1
@@ -121,6 +138,26 @@ pivotHigh = ta.pivothigh(high, pivotLength, pivotLength)
 var float lastPivotLow = na
 var float lastPivotHigh = na
 
+//══════════════════════════════════════
+// MEMORIA DEL ÚLTIMO SWEEP
+//══════════════════════════════════════
+
+var float lastBullSweepPrice = na
+var float lastBearSweepPrice = na
+
+var int lastBullSweepBar = na
+var int lastBearSweepBar = na
+
+//══════════════════════════════════════
+// TIPO DE SWEEP
+//══════════════════════════════════════
+
+var bool bullSweepWick = false
+var bool bearSweepWick = false
+
+var bool bullSweepConfirmed = false
+var bool bearSweepConfirmed = false
+
 if not na(pivotLow)
     lastPivotLow := pivotLow
 
@@ -131,47 +168,52 @@ if not na(pivotHigh)
 // LIQUIDITY SWEEP
 //══════════════════════════════════════
 
-bullSweep =
-     not na(lastPivotLow) and
-     low < lastPivotLow and
-     close > lastPivotLow
+// Sweep por mecha (estilo LuxAlgo)
 
-bearSweep =
-     not na(lastPivotHigh) and
-     high > lastPivotHigh and
-     close < lastPivotHigh
+bullSweepWick := not na(lastPivotLow) and low < lastPivotLow and close > lastPivotLow
+
+bearSweepWick := not na(lastPivotHigh) and high > lastPivotHigh and close < lastPivotHigh
+
+// Confirmación
+
+bullSweepConfirmed := bullSweepWick and close > open
+
+bearSweepConfirmed := bearSweepWick and close < open
+
+bullSweep = bullSweepConfirmed
+bearSweep = bearSweepConfirmed
 
 // Fortaleza de la vela
-bullBody =
-     close > open and
-     close > (low + (high-low)*0.5)
+bullBody = close > open and close > (low + (high-low)*0.5)
 
-bearBody =
-     close < open and
-     close < (high - (high-low)*0.5)
+bearBody = close < open and close < (high - (high-low)*0.5)
 
-    
 //══════════════════════════════════════
 // LIQUIDITY SCORE
 //══════════════════════════════════════
 
-if bullSweep or bearSweep
+if bullSweep
     liquidityScore += 40
+    lastBullSweepPrice := low
+    lastBullSweepBar := bar_index
+
+if bearSweep
+    liquidityScore += 40
+    lastBearSweepPrice := high
+    lastBearSweepBar := bar_index
 
 if bullBody or bearBody
     liquidityScore += 20
 
 // Confirmación de continuación
-bullConfirm =
-     bullSweep[1] and
-     close > high[1]
+bullConfirm = bullSweep[1] and close > high[1]
 
-bearConfirm =
-     bearSweep[1] and
-     close < low[1]
+bearConfirm = bearSweep[1] and close < low[1]
 
 if bullConfirm or bearConfirm
     liquidityScore += 40
+
+liquidityOK := liquidityScore >= 60
 
 //══════════════════════════════════════════════
 // STRUCTURE ENGINE v1
@@ -179,56 +221,179 @@ if bullConfirm or bearConfirm
 
 // Break Of Structure
 
-bullBOS =
-    not na(lastPivotHigh) and
-    close > lastPivotHigh
+bool bullBOS = not na(lastPivotHigh) and close > lastPivotHigh
+bool bearBOS = not na(lastPivotLow) and close < lastPivotLow
 
-bearBOS =
-    not na(lastPivotLow) and
-    close < lastPivotLow
+//══════════════════════════════════════
+// BOS QUALITY ENGINE
+//══════════════════════════════════════
 
 if bullBOS
+
     structureScore += 50
+    bosStrength := 0
+
+    // Rompió con cuerpo alcista
+    if close > open
+        bosStrength += 25
+
+    // Cerró por encima del pivot
+    if close > lastPivotHigh
+        bosStrength += 25
+
+    // Tendencia alineada
+    if bullTrend
+        bosStrength += 25
+
+    // EMAs expandiéndose
+    if emaExpansion
+        bosStrength += 25
 
 if bearBOS
+
     structureScore += 50
+    bosStrength := 0
+
+    // Rompió con cuerpo bajista
+    if close < open
+        bosStrength += 25
+
+    // Cerró por debajo del pivot
+    if close < lastPivotLow
+        bosStrength += 25
+
+    // Tendencia alineada
+    if bearTrend
+        bosStrength += 25
+
+    // EMAs expandiéndose
+    if emaExpansion
+        bosStrength += 25
+
+structureOK := structureScore >= 50
+
+//══════════════════════════════════════════════
+// CHOCH ENGINE v1
+//══════════════════════════════════════════════
+
+bool bullCHoCH = bullTrend and bullSweep and bullBOS
+
+bool bearCHoCH = bearTrend and bearSweep and bearBOS
+
+if bullCHoCH
+    chochScore += 50
+
+if bearCHoCH
+    chochScore += 50
+
+//══════════════════════════════════════════════
+// FVG ENGINE v1
+//══════════════════════════════════════════════
+
+//══════════════════════════════════════
+// ICT FVG ENGINE v3
+//══════════════════════════════════════
+
+// ATR
+i_atrLength = 28
+i_atrMultiplier = 1.5
+
+// BOXES
+var box[] boxArray = array.new_box()
+
+i_boxCount = input.int(
+     20,
+     "ICT Max Boxes",
+     minval = 1,
+     group = "FVG")
+
+upBoxColor = color.new(color.green,70)
+downBoxColor = color.new(color.red,70)
+
+f_isUpCandle(_index) =>
+    open[_index] <= close[_index]
+
+f_isFairValueGap() =>
+
+    bearCondition = close[3] <= high[2] and close[1] <= close[2] and high < low[2]
+
+    bullCondition = close[3] >= low[2] and close[1] >= close[2] and low > high[2]
+
+    priceDiff = high[1] - low[1]
+
+    atrValue = ta.atr(i_atrLength)
+
+    middleCandleVolatilityCondition = priceDiff > atrValue * i_atrMultiplier
+
+    isUpCandle = f_isUpCandle(1)
+
+    isGapClosed = isUpCandle ? high[2] >= low : low[2] <= high
+
+    // FIX: el retorno de la tupla debe quedar DENTRO de la función,
+    // con la misma indentación que el resto del cuerpo. Antes estaba
+    // duplicado y por fuera del bloque, así que la función solo
+    // devolvía "isGapClosed" (un solo booleano) en vez de las 4 señales.
+    [isGapClosed, bearCondition, bullCondition, middleCandleVolatilityCondition]
+
+[isGapClosed, bearCondition, bullCondition, middleCandleVolatilityCondition] = f_isFairValueGap()
+
+bool bullFVG = bullCondition and not isGapClosed and middleCandleVolatilityCondition
+
+bool bearFVG = bearCondition and not isGapClosed and middleCandleVolatilityCondition
+
+bullFVG := bullFVG and bullTrend
+
+bearFVG := bearFVG and bearTrend
+
+if bullFVG
+    fvgScore += 20
+
+if bearFVG
+    fvgScore += 20
 
 //══════════════════════════════════════════════
 // FINAL SCORE ENGINE
 //══════════════════════════════════════════════
 
-score := trendScore + liquidityScore + structureScore
+score := trendScore + liquidityScore + structureScore + chochScore + fvgScore
 score := math.min(score,100)
 
 //══════════════════════════════════════════════
 // PANEL
 //══════════════════════════════════════════════
 
-var table panel = table.new(position.top_right,2,7)
+var table panel = table.new(position.top_right,2,10)
+panelBg = color.new(color.black, 20)
+titleBg = color.rgb(25,25,35)
 
+// FIX: TODAS las celdas deben ir indentadas dentro de este "if".
+// Antes solo la primera celda (fila 0, col 0) estaba adentro; el resto
+// se dibujaba en cada vela sin importar el toggle "showPanel".
 if barstate.islast and showPanel
+    table.cell(panel,0,0,"TOP SIGNAL",text_color=color.white,bgcolor=titleBg)
+    table.cell(panel,1,0,"v0.2.2",text_color=color.yellow,bgcolor=titleBg)
 
-    table.cell(panel,0,0,"TOP SIGNAL",text_color=color.white,bgcolor=color.rgb(25,25,35))
-    table.cell(panel,1,0,"v0.1",text_color=color.yellow,bgcolor=color.rgb(25,25,35))
+    table.cell(panel,0,1,"Score",text_color=color.white,bgcolor=panelBg)
+    table.cell(panel,1,1,str.tostring(score),text_color=color.yellow,bgcolor=panelBg)
 
-    table.cell(panel,0,1,"Score")
-    table.cell(panel,1,1,str.tostring(score))
+    table.cell(panel,0,2,"Trend",text_color=color.white,bgcolor=panelBg)
 
-    table.cell(panel,0,2,"Trend")
+    table.cell(panel,1,2, bullTrend ? "Bullish" : bearTrend ? "Bearish" : "Neutral", text_color=color.aqua, bgcolor=panelBg)
 
-    table.cell(panel,1,2,
-         bullTrend ? "Bullish" :
-         bearTrend ? "Bearish" :
-         "Neutral")
+    table.cell(panel,0,3,"Activo",text_color=color.white,bgcolor=panelBg)
+    table.cell(panel,1,3,syminfo.ticker,text_color=color.white,bgcolor=panelBg)
 
-    table.cell(panel,0,3,"Activo")
-    table.cell(panel,1,3,syminfo.ticker)
+    table.cell(panel,0,4,"TF",text_color=color.white,bgcolor=panelBg)
+    table.cell(panel,1,4,timeframe.period,text_color=color.orange,bgcolor=panelBg)
 
-    table.cell(panel,0,4,"TF")
-    table.cell(panel,1,4,timeframe.period)
+    table.cell(panel,0,5,"Trend Score",text_color=color.white,bgcolor=panelBg)
+    table.cell(panel,1,5,str.tostring(trendScore),text_color=color.lime,bgcolor=panelBg)
 
-    table.cell(panel,0,5,"Trend Score")
-    table.cell(panel,1,5,str.tostring(trendScore))
+    table.cell(panel,0,6,"Liquidity",text_color=color.white,bgcolor=panelBg)
+    table.cell(panel,1,6,str.tostring(liquidityScore),text_color=color.fuchsia,bgcolor=panelBg)
 
-    table.cell(panel,0,6,"Liquidity")
-    table.cell(panel,1,6,str.tostring(liquidityScore))
+    table.cell(panel,0,7,"CHoCH",text_color=color.white,bgcolor=panelBg)
+    table.cell(panel,1,7,str.tostring(chochScore),text_color=color.orange,bgcolor=panelBg)
+
+    table.cell(panel,0,8,"FVG",text_color=color.white,bgcolor=panelBg)
+    table.cell(panel,1,8,str.tostring(fvgScore),text_color=color.yellow,bgcolor=panelBg)
